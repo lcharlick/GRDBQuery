@@ -16,6 +16,9 @@ import SwiftUI
     
     /// Database access
     @Environment(\.queryObservationEnabled) private var queryObservationEnabled
+
+    /// Database observation suspension
+    @Environment(\.queryObservationSuspended) private var queryObservationSuspended
     
     /// The object that keeps on observing the database as long as it is alive.
     @StateObject private var tracker = Tracker()
@@ -251,6 +254,7 @@ import SwiftUI
         
         func update(
             queryObservationEnabled: Bool,
+            queryObservationSuspended: Bool,
             configuration queryConfiguration: Configuration,
             database: Request.Context)
         {
@@ -260,7 +264,7 @@ import SwiftUI
                 cancellable = nil
                 return
             }
-            
+
             let newRequest: Request
             switch queryConfiguration {
             case let .initial(initialRequest):
@@ -271,26 +275,37 @@ import SwiftUI
             case let .binding(binding):
                 newRequest = binding.wrappedValue
             }
-            
-            // Give up if the request is already tracked.
-            if newRequest == trackedRequest {
+
+            // When suspended with existing value, keep it and don't re-fetch
+            if queryObservationSuspended, newRequest == trackedRequest, value != nil {
+                cancellable?.cancel()
+                cancellable = nil
                 return
             }
-            
+
+            // Give up if the request is already tracked (only for non-suspended)
+            if !queryObservationSuspended, newRequest == trackedRequest, cancellable != nil {
+                return
+            }
+
             // Update inner state.
             trackedRequest = newRequest
             request = newRequest
             error = nil
-            
+
             // Load the publisher
-            let publisher: Request.ValuePublisher
+            let publisher: AnyPublisher<Request.Value, Request.ValuePublisher.Failure>
             do {
-                publisher = try newRequest.publisher(in: database)
+                let pub = try newRequest.publisher(in: database)
+                // When suspended, take only first value then complete
+                publisher = queryObservationSuspended
+                    ? pub.prefix(1).eraseToAnyPublisher()
+                    : pub.eraseToAnyPublisher()
             } catch {
                 self.error = error
                 return
             }
-            
+
             // Start tracking the new request
             var isUpdating = true
             cancellable = publisher.sink(
@@ -334,6 +349,7 @@ extension Query: DynamicProperty {
         MainActor.assumeIsolated {
             tracker.update(
                 queryObservationEnabled: queryObservationEnabled,
+                queryObservationSuspended: queryObservationSuspended,
                 configuration: configuration,
                 database: database)
         }
@@ -344,11 +360,22 @@ private struct QueryObservationEnabledKey: EnvironmentKey {
     static let defaultValue = true
 }
 
+private struct QueryObservationSuspendedKey: EnvironmentKey {
+    static let defaultValue = false
+}
+
 extension EnvironmentValues {
     /// A Boolean value that indicates whether `@Query` property wrappers are
     /// observing their requests.
     public var queryObservationEnabled: Bool {
         get { self[QueryObservationEnabledKey.self] }
         set { self[QueryObservationEnabledKey.self] = newValue }
+    }
+
+    /// A Boolean value that indicates whether `@Query` property wrappers are
+    /// suspended (fetch once, but don't observe changes).
+    public var queryObservationSuspended: Bool {
+        get { self[QueryObservationSuspendedKey.self] }
+        set { self[QueryObservationSuspendedKey.self] = newValue }
     }
 }
