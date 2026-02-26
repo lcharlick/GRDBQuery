@@ -29,11 +29,21 @@ where Context: TopLevelDatabaseReader,
 
 extension ValueObservationQueryable {
     public static var queryableOptions: QueryableOptions { .default }
-    
+
     @MainActor public func publisher(in context: Context) -> ValuePublisher {
         context.publishObservation(
             queryableOptions: Self.queryableOptions,
             value: { try self.fetch($0) })
+    }
+}
+
+extension ValueObservationQueryable where Value: Equatable {
+    @MainActor public func publisher(in context: Context) -> ValuePublisher {
+        context.publishObservation(
+            queryableOptions: Self.queryableOptions,
+            value: { try self.fetch($0) })
+        .removeDuplicates()
+        .eraseToAnyPublisher()
     }
 }
 
