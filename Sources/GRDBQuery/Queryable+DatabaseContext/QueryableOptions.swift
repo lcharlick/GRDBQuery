@@ -64,7 +64,27 @@ public struct QueryableOptions: OptionSet, Sendable {
     /// With this option, errors that happen while accessing the
     /// database terminate the app with a fatal error.
     public static let assertNoFailure = QueryableOptions(rawValue: 1 << 2)
-    
+
+    /// By default, every observed value is published, even if it is equal to
+    /// the previous one. With this option, consecutive equal values are
+    /// filtered out, preventing unnecessary SwiftUI updates.
+    ///
+    /// This option requires the observed `Value` to conform to `Equatable`.
+    ///
+    /// For example:
+    ///
+    /// ```swift
+    /// struct PlayersRequest: ValueObservationQueryable {
+    ///     static let queryableOptions = QueryableOptions.removeDuplicates
+    ///     static let defaultValue: [Player] = []
+    ///
+    ///     func fetch(_ db: Database) throws -> [Player] {
+    ///         try Player.fetchAll(db)
+    ///     }
+    /// }
+    /// ```
+    public static let removeDuplicates = QueryableOptions(rawValue: 1 << 3)
+
     /// The default options.
     public static let `default`: QueryableOptions = []
 }

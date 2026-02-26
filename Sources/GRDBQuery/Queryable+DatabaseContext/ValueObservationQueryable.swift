@@ -39,11 +39,13 @@ extension ValueObservationQueryable {
 
 extension ValueObservationQueryable where Value: Equatable {
     @MainActor public func publisher(in context: Context) -> ValuePublisher {
-        context.publishObservation(
+        let publisher = context.publishObservation(
             queryableOptions: Self.queryableOptions,
             value: { try self.fetch($0) })
-        .removeDuplicates()
-        .eraseToAnyPublisher()
+        if Self.queryableOptions.contains(.removeDuplicates) {
+            return publisher.removeDuplicates().eraseToAnyPublisher()
+        }
+        return publisher
     }
 }
 
@@ -57,21 +59,21 @@ extension TopLevelDatabaseReader {
         return DeferredOnMainActor {
             do {
                 let reader = try readerResult.get()
-                
+
                 let observation: ValueObservation<ValueReducers.Fetch<Value>>
                 if queryableOptions.contains(.constantRegion) {
                     observation = ValueObservation.trackingConstantRegion(value)
                 } else {
                     observation = ValueObservation.tracking(value)
                 }
-                
+
                 let publisher: DatabasePublishers.Value<Value>
                 if queryableOptions.contains(.async) {
                     publisher = reader.publish(observation, scheduling: .async(onQueue: .main))
                 } else {
                     publisher = reader.publish(observation, scheduling: .immediate)
                 }
-                
+
                 return publisher.eraseToAnyPublisher()
             } catch {
                 return Fail(outputType: Value.self, failure: error)
