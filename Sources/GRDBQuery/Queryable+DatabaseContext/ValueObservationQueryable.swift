@@ -33,6 +33,17 @@ extension ValueObservationQueryable {
     @MainActor public func publisher(in context: Context) -> ValuePublisher {
         context.publishObservation(
             queryableOptions: Self.queryableOptions,
+            subscription: .initial,
+            value: { try self.fetch($0) })
+    }
+
+    @MainActor public func publisher(
+        in context: Context,
+        subscription: QuerySubscription
+    ) throws -> ValuePublisher {
+        context.publishObservation(
+            queryableOptions: Self.queryableOptions,
+            subscription: subscription,
             value: { try self.fetch($0) })
     }
 }
@@ -41,11 +52,30 @@ extension ValueObservationQueryable where Value: Equatable {
     @MainActor public func publisher(in context: Context) -> ValuePublisher {
         let publisher = context.publishObservation(
             queryableOptions: Self.queryableOptions,
+            subscription: .initial,
             value: { try self.fetch($0) })
         if Self.queryableOptions.contains(.removeDuplicates) {
             return publisher.removeDuplicates().eraseToAnyPublisher()
         }
         return publisher
+    }
+
+    @MainActor public func publisher(
+        in context: Context,
+        subscription: QuerySubscription
+    ) throws -> ValuePublisher {
+        let publisher = context.publishObservation(
+            queryableOptions: Self.queryableOptions,
+            subscription: subscription,
+            value: { try self.fetch($0) })
+        if Self.queryableOptions.contains(.removeDuplicates) {
+            return publisher.removeDuplicates().eraseToAnyPublisher()
+        }
+        return publisher
+    }
+
+    @MainActor public static func valuesAreEquivalent(_ lhs: Value, _ rhs: Value) -> Bool {
+        Self.queryableOptions.contains(.removeDuplicates) && lhs == rhs
     }
 }
 
@@ -53,6 +83,7 @@ extension TopLevelDatabaseReader {
     /// Returns a publisher of an observed database value.
     @MainActor func publishObservation<Value: Sendable>(
         queryableOptions: QueryableOptions,
+        subscription: QuerySubscription = .initial,
         value: @escaping @Sendable (Database) throws -> Value
     ) -> AnyPublisher<Value, any Error> {
         let readerResult = Result { try reader }
@@ -68,7 +99,9 @@ extension TopLevelDatabaseReader {
                 }
 
                 let publisher: DatabasePublishers.Value<Value>
-                if queryableOptions.contains(.async) {
+                let fetchesAsynchronously = queryableOptions.contains(.async)
+                    || (subscription == .resuming && queryableOptions.contains(.asyncOnResume))
+                if fetchesAsynchronously {
                     publisher = reader.publish(observation, scheduling: .async(onQueue: .main))
                 } else {
                     publisher = reader.publish(observation, scheduling: .immediate)

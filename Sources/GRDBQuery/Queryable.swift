@@ -1,5 +1,14 @@
 import Combine
 
+/// Describes why a Queryable publisher is being created.
+public enum QuerySubscription: Equatable, Sendable {
+    /// The query is being subscribed for the first time.
+    case initial
+
+    /// The query is being subscribed again after observation was suspended.
+    case resuming
+}
+
 // See Documentation.docc/Extensions/Queryable.md
 public protocol Queryable<Context>: Equatable {
     /// The type of the published values.
@@ -36,4 +45,34 @@ public protocol Queryable<Context>: Equatable {
     /// - parameter database: Provides access to the database.
     /// - throws: Any error that prevents the publisher to be returned.
     @MainActor func publisher(in database: Context) throws -> ValuePublisher
+
+    /// Returns a publisher for an initial subscription or a resumption after
+    /// observation was suspended.
+    ///
+    /// The default implementation calls publisher(in:) for both kinds of
+    /// subscription. Queryable types can provide different scheduling for a
+    /// resumed subscription.
+    @MainActor func publisher(
+        in database: Context,
+        subscription: QuerySubscription
+    ) throws -> ValuePublisher
+
+    /// Returns whether two published values are equivalent.
+    ///
+    /// The default implementation always returns false. Queryable types can
+    /// use this hook to suppress duplicate values across publisher lifetimes.
+    @MainActor static func valuesAreEquivalent(_ lhs: Value, _ rhs: Value) -> Bool
+}
+
+extension Queryable {
+    @MainActor public func publisher(
+        in database: Context,
+        subscription: QuerySubscription
+    ) throws -> ValuePublisher {
+        try publisher(in: database)
+    }
+
+    @MainActor public static func valuesAreEquivalent(_ lhs: Value, _ rhs: Value) -> Bool {
+        false
+    }
 }

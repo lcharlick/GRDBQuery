@@ -249,6 +249,7 @@ import SwiftUI
         // Actual subscription
         private var trackedRequest: Request?
         private var cancellable: AnyCancellable?
+        private var wasSuspended = false
         
         nonisolated init() { }
         
@@ -262,6 +263,7 @@ import SwiftUI
             guard queryObservationEnabled else {
                 trackedRequest = nil
                 cancellable = nil
+                wasSuspended = false
                 return
             }
 
@@ -280,6 +282,7 @@ import SwiftUI
             if queryObservationSuspended, newRequest == trackedRequest, value != nil {
                 cancellable?.cancel()
                 cancellable = nil
+                wasSuspended = true
                 return
             }
 
@@ -293,10 +296,15 @@ import SwiftUI
             request = newRequest
             error = nil
 
+            let subscription: QuerySubscription = wasSuspended && !queryObservationSuspended
+                ? .resuming
+                : .initial
+            wasSuspended = queryObservationSuspended
+
             // Load the publisher
             let publisher: AnyPublisher<Request.Value, Request.ValuePublisher.Failure>
             do {
-                let pub = try newRequest.publisher(in: database)
+                let pub = try newRequest.publisher(in: database, subscription: subscription)
                 // When suspended, take only first value then complete
                 publisher = queryObservationSuspended
                     ? pub.prefix(1).eraseToAnyPublisher()
@@ -327,6 +335,11 @@ import SwiftUI
                 receiveValue: { [weak self] value in
                     guard let self = self else { return }
                     MainActor.assumeIsolated {
+                        if let previousValue = self.value,
+                           Request.valuesAreEquivalent(previousValue, value)
+                        {
+                            return
+                        }
                         if !isUpdating {
                             // Avoid the runtime warning in the case of publishers
                             // that publish values right on subscription:

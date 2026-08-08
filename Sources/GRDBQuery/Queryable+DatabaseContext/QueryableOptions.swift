@@ -6,8 +6,10 @@
 /// ### Predefined options
 ///
 /// - ``async``
+/// - ``asyncOnResume``
 /// - ``constantRegion``
 /// - ``assertNoFailure``
+/// - ``removeDuplicates``
 public struct QueryableOptions: OptionSet, Sendable {
     public let rawValue: Int
     
@@ -84,6 +86,16 @@ public struct QueryableOptions: OptionSet, Sendable {
     /// }
     /// ```
     public static let removeDuplicates = QueryableOptions(rawValue: 1 << 3)
+
+    /// The initial value is fetched immediately, but a new initial value after
+    /// observation suspension is fetched asynchronously.
+    ///
+    /// Use this option for views that need their initial value synchronously,
+    /// but should keep displaying their last value while observation resumes
+    /// without blocking the main thread.
+    ///
+    /// This option only applies to ValueObservationQueryable types.
+    public static let asyncOnResume = QueryableOptions(rawValue: 1 << 4)
 
     /// The default options.
     public static let `default`: QueryableOptions = []
